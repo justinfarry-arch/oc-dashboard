@@ -6,6 +6,7 @@ export CFG
 
 # --------- Read config without jq (via Python) ----------
 read_cfg() {
+echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} TX:${TX_HOSTPORT_LOCAL} SSH:${MUTINY_SSH}" >&2
 /usr/bin/python3 - <<'PY'
 import os, json, pathlib, sys
 cfg = os.environ.get("CFG", os.path.expanduser("~/oc-dashboard/config.local.json"))
