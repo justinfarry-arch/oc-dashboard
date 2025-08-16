@@ -2,6 +2,7 @@
 # OC Health – SwiftBar (refresh every 1m)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 CFG="$HOME/oc-dashboard/config.local.json"
+export CFG
 
 # --------- Read config without jq ----------
 read_cfg() {
