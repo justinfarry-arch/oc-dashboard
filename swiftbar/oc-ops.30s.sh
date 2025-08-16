@@ -1,12 +1,16 @@
+cat > ~/oc-dashboard/swiftbar/oc-ops.30s.sh <<'SH'
 #!/bin/bash
 # OC Ops – SwiftBar (refresh every 30s)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
-CFG_FILE="$HOME/oc-dashboard/config.local.json"
+# choose a working python3
+PYTHON="$(command -v python3)"
+[ -x "$PYTHON" ] || PYTHON="/opt/homebrew/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="/usr/bin/python3"
 
 # --------- Read config (grouped JSON) with Python (absolute path) ----------
 read_cfg() {
-/usr/bin/python3 - <<'PY'
+"$PYTHON" - <<'PY'
 import os, json, pathlib, sys
 cfg_path = os.path.expanduser(os.path.join(os.environ.get("HOME",""), "oc-dashboard", "config.local.json"))
 p = pathlib.Path(cfg_path)
@@ -52,7 +56,7 @@ IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP TX_HOSTPORT_LOCAL PORTAINER_IP SWIT
 : "${TX_HOSTPORT_LOCAL:=10.0.0.4:9091}"
 : "${MUTINY_SSH:=justin@10.0.0.4}"
 
-# Debug (visible in Terminal; SwiftBar ignores stderr)
+# Debug (stderr so SwiftBar ignores it) — this MUST print when you run the script in Terminal
 echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} TX:${TX_HOSTPORT_LOCAL} SSH:${MUTINY_SSH} URL:${DASH_URL}" >&2
 
 # --------- Host checks: ICMP then TCP fallback ----------
@@ -88,10 +92,11 @@ echo "📜 Tail Transmission Logs (100) | bash=/bin/bash param1=-lc param2='ssh 
 
 echo "---"
 if command -v speedtest >/dev/null 2>&1; then
-  echo "🏎 Run Speedtest (log) | bash=/bin/bash param1=-lc param2='speedtest --format=json 2>/dev/null | /usr/bin/python3 - \"$HOME/OC_Dashboard_speedtest.csv\" <<PY\nimport sys, json, datetime\nj=json.load(sys.stdin)\nrow=\",\".join([\n  datetime.datetime.utcnow().isoformat()+\"Z\",\n  str(j.get(\"download\",{}).get(\"bandwidth\",\"\")),\n  str(j.get(\"upload\",{}).get(\"bandwidth\",\"\")),\n  str(j.get(\"ping\",{}).get(\"latency\",\"\"))\n])\nopen(sys.argv[1],\"a\").write(row+\"\\n\")\nPY' terminal=false refresh=true"
+  echo "🏎 Run Speedtest (log) | bash=/bin/bash param1=-lc param2='speedtest --format=json 2>/dev/null | \"$PYTHON\" - \"$HOME/OC_Dashboard_speedtest.csv\" <<PY\nimport sys, json, datetime\nj=json.load(sys.stdin)\nrow=\",\".join([\n  datetime.datetime.utcnow().isoformat()+\"Z\",\n  str(j.get(\"download\",{}).get(\"bandwidth\",\"\")),\n  str(j.get(\"upload\",{}).get(\"bandwidth\",\"\")),\n  str(j.get(\"ping\",{}).get(\"latency\",\"\"))\n])\nopen(sys.argv[1],\"a\").write(row+\"\\n\")\nPY' terminal=false refresh=true"
 fi
 [ -f "$HOME/OC_Dashboard_speedtest.csv" ] && echo "📁 Open Speedtest Log | bash=/usr/bin/open param1=$HOME/OC_Dashboard_speedtest.csv terminal=false refresh=false"
 
 echo "---"
 echo "⬇️ Update from GitHub | bash=/bin/bash param1=-lc param2='cd ~/oc-dashboard && git pull --ff-only && osascript -e \"display notification \\\"Updated\\\" with title \\\"OC Dashboard\\\"\"' terminal=false refresh=true"
 echo "🔄 Refresh | refresh=true"
+SH
