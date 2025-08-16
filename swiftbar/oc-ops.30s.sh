@@ -2,42 +2,47 @@
 # OC Ops – SwiftBar (refresh every 30s)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
-CFG="$HOME/oc-dashboard/config.local.json"
-export CFG
+CFG_FILE="$HOME/oc-dashboard/config.local.json"
 
-# --------- Read config (grouped JSON) with Python ----------
+# --------- Read config (grouped JSON) with Python (absolute path) ----------
 read_cfg() {
 /usr/bin/python3 - <<'PY'
 import os, json, pathlib, sys
-cfg = os.environ.get("CFG", os.path.expanduser("~/oc-dashboard/config.local.json"))
-p = pathlib.Path(os.path.expanduser(cfg))
+cfg_path = os.path.expanduser(os.path.join(os.environ.get("HOME",""), "oc-dashboard", "config.local.json"))
+p = pathlib.Path(cfg_path)
 def blanks(n): print("\n".join([""]*n))
 if not p.exists():
     blanks(9); sys.exit(0)
 try:
-    o = json.load(open(p))
-except Exception as e:
+    with open(p) as f:
+        o = json.load(f)
+except Exception:
     blanks(9); sys.exit(0)
-S = o.get("IP allowlisting", {}) or {}
-O = o.get("other", {}) or {}
+
+S = o.get("IP allowlisting") or {}
+O = o.get("other") or {}
+
 def pick(*vals):
     for v in vals:
-        if v not in (None, "", []): return v
+        if v not in (None, "", []):
+            return v
     return ""
+
 vals = [
-    pick(o.get("router_ip"), S.get("router_ip")),
-    pick(o.get("nas_ip"), S.get("nas_ip")),
-    pick(o.get("server_ip"), S.get("server_ip")),
-    pick(o.get("tx_hostport"), S.get("tx_hostport")),
-    pick(o.get("portainer"), S.get("portainer")),
-    pick(o.get("switch_ip"), S.get("switch_ip")),
-    pick(o.get("server_ssh"), O.get("server_ssh")),
+    pick(o.get("router_ip"),     S.get("router_ip")),
+    pick(o.get("nas_ip"),        S.get("nas_ip")),
+    pick(o.get("server_ip"),     S.get("server_ip")),
+    pick(o.get("tx_hostport"),   S.get("tx_hostport")),
+    pick(o.get("portainer"),     S.get("portainer")),
+    pick(o.get("switch_ip"),     S.get("switch_ip")),
+    pick(o.get("server_ssh"),    O.get("server_ssh")),
     pick(o.get("dashboard_url"), O.get("dashboard_url")),
     pick(o.get("master_shortcut"), O.get("master_shortcut"), "OC Dashboard Menu")
 ]
 print("\n".join(vals))
 PY
 }
+
 IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP TX_HOSTPORT_LOCAL PORTAINER_IP SWITCH_IP MUTINY_SSH DASH_URL SHORTCUT_MENU < <(read_cfg)
 
 # --------- Fallback defaults if config failed ----------
@@ -47,8 +52,8 @@ IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP TX_HOSTPORT_LOCAL PORTAINER_IP SWIT
 : "${TX_HOSTPORT_LOCAL:=10.0.0.4:9091}"
 : "${MUTINY_SSH:=justin@10.0.0.4}"
 
-# Optional debug (leave on until green)
-echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} TX:${TX_HOSTPORT_LOCAL} SSH:${MUTINY_SSH}" >&2
+# Debug (visible in Terminal; SwiftBar ignores stderr)
+echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} TX:${TX_HOSTPORT_LOCAL} SSH:${MUTINY_SSH} URL:${DASH_URL}" >&2
 
 # --------- Host checks: ICMP then TCP fallback ----------
 host_emoji() {
