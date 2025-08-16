@@ -3,16 +3,24 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 CFG="$HOME/oc-dashboard/config.local.json"
-jq() { /opt/homebrew/bin/jq "$@"; }
+JQ="/opt/homebrew/bin/jq"; [ -x "$JQ" ] || JQ="/usr/local/bin/jq"
+jq() { "$JQ" "$@"; }
 
-ROUTER_IP=$(jq -r '.router_ip' "$CFG" 2>/dev/null)
-NAS_IP=$(jq -r '.nas_ip' "$CFG" 2>/dev/null)
-MUTINY_IP=$(jq -r '.server_ip' "$CFG" 2>/dev/null)
-MUTINY_SSH=$(jq -r '.server_ssh' "$CFG" 2>/dev/null)
+ROUTER_IP=$(jq -r '.router_ip // ."IP allowlisting".router_ip' "$CFG")
+NAS_IP=$(jq -r '.nas_ip // ."IP allowlisting".nas_ip' "$CFG")
+MUTINY_IP=$(jq -r '.server_ip // ."IP allowlisting".server_ip' "$CFG")
+MUTINY_SSH=$(jq -r '.server_ssh // .other.server_ssh' "$CFG")
 
-ok() { ping -c1 -W 200 "$1" >/dev/null 2>&1 && echo "✅" || echo "🟥"; }
+host_ok() {
+  local ip="$1"; shift
+  /sbin/ping -c1 -W 1000 "$ip" >/dev/null 2>&1 && { echo "✅"; return; }
+  for p in "$@"; do /usr/bin/nc -z -G 1 "$ip" "$p" >/dev/null 2>&1 && { echo "✅"; return; }; done
+  echo "🟥"
+}
 
-RTR=$(ok "$ROUTER_IP"); NAS=$(ok "$NAS_IP"); SRV=$(ok "$MUTINY_IP")
+RTR=$(host_ok "$ROUTER_IP" 80 443 53 8291)
+NAS=$(host_ok "$NAS_IP" 445 139 80 443)
+SRV=$(host_ok "$MUTINY_IP" 22 80 443 9091)
 
 echo "🩺 $RTR$NAS$SRV"
 echo "---"
