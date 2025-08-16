@@ -1,0 +1,10 @@
+{
+  "router_ip": "10.0.0.1",
+  "nas_ip": "10.0.0.6",
+  "server_ip": "10.0.0.4",
+  "server_ssh": "justin@10.0.0.4",
+  "tx_hostport": "127.0.0.1:9091",
+  "nas_mac": "00:90:A9:E8:AA:77",
+  "dashboard_url": "https://dashboard.service.omnicore.local",
+  "master_shortcut": "OC Dashboard Menu"
+}

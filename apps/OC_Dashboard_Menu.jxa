@@ -1,0 +1,225 @@
+// OC Dashboard Menu (JXA) – runs from file with: osascript -l JavaScript ~/oc-dashboard/apps/OC_Dashboard_Menu.jxa
+ObjC.import('stdlib');
+const app = Application.currentApplication();
+app.includeStandardAdditions = true;
+
+// ---------- Helpers ----------
+function sh(cmd) {
+  return app.doShellScript(cmd);
+}
+function shQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
+// Load config (expand $HOME properly; local overrides example)
+function loadConfig() {
+  const HOME = sh('printf %s "$HOME"'); // resolve ~ safely
+  const local  = `${HOME}/oc-dashboard/config.local.json`;
+  const sample = `${HOME}/oc-dashboard/config.example.json`;
+  try {
+    const s = sh(`cat ${shQuote(local)}`);
+    return JSON.parse(s);
+  } catch (e) {
+    const s = sh(`cat ${shQuote(sample)}`);
+    return JSON.parse(s);
+  }
+}
+const CFG = loadConfig();
+
+function runShortcut(name, input = "") {
+  const cmd = "/usr/bin/shortcuts run " + shQuote(name) + (input ? (" --input " + shQuote(input)) : "");
+  try {
+    sh(cmd);
+  } catch (e) {
+    const have = (()=>{ try { return sh("command -v /usr/bin/shortcuts || true"); } catch(_){ return "n/a"; } })();
+    const list = (()=>{ try { return sh("/usr/bin/shortcuts list 2>/dev/null | head -n 200"); } catch(_){ return "n/a"; } })();
+    app.displayAlert("Shortcuts CLI error", {message: `Tried:\n${cmd}\n\n${e}\n\nCLI: ${have}\n\nVisible shortcuts:\n${list}`});
+  }
+}
+
+function pingEmoji(host) {
+  try { sh(`/sbin/ping -c1 -W 200 ${host}`); return "✅"; } catch (_) { return "🟥"; }
+}
+
+function runSpeedtestAndLog() {
+  try {
+    const out = sh(`/opt/homebrew/bin/speedtest --format=json 2>/dev/null`);
+    const o = JSON.parse(out);
+    const row = [
+      new Date().toISOString(),
+      o.download?.bandwidth ?? "",
+      o.upload?.bandwidth ?? "",
+      o.ping?.latency ?? ""
+    ].join(",") + "\n";
+    sh(`printf %s ${shQuote(row)} >> "$HOME/OC_Dashboard_speedtest.csv"`);
+    app.displayNotification("Speedtest complete", {withTitle: "OC Dashboard"});
+  } catch (e) {
+    app.displayAlert("Speedtest failed", {message: String(e)});
+  }
+}
+
+function haveShortcut(name) {
+  try { sh(`/usr/bin/shortcuts list | sed -e 's/[[:space:]]*$//' | grep -Fx ${shQuote(name)}`); return true; }
+  catch(_) { return false; }
+}
+function verifyTargets(names) {
+  const missing = names.filter(n => !haveShortcut(n));
+  if (missing.length) app.displayAlert("Missing Shortcuts", {message: missing.join("\n")});
+  else app.displayNotification("All targets found ✅", {withTitle: "OC Dashboard"});
+}
+
+function wol(mac) {
+  try { sh(`/opt/homebrew/bin/wakeonlan ${mac}`); }
+  catch(e) { app.displayAlert("WOL error", {message: String(e)}); }
+}
+
+function statusSummary() {
+  const rtr = pingEmoji(CFG.router_ip);  // SYSOP-GW
+  const nas = pingEmoji(CFG.nas_ip);     // DATAVAULT-NAS
+  const srv = pingEmoji(CFG.server_ip);  // MUTINY-SRV
+  return `Router (SYSOP-GW): ${rtr}\nNAS (DATAVAULT-NAS): ${nas}\nServer (MUTINY-SRV): ${srv}`;
+}
+
+function openInChromeProfile(url, profile = "Default") {
+  sh(`/usr/bin/open -na "Google Chrome" --args --profile-directory=${shQuote(profile)} ${shQuote(url)}`);
+}
+
+// ---------- Submenus ----------
+function submenuRouters() {
+  const choice = app.chooseFromList(
+    ["Launch UI (SYSOP-GW)", "Launch Patchbay UI", "Launch WiFi UI", "⬅ Back to Main Menu"],
+    {withTitle: "Routers & Network", okButtonName: "Run", cancelButtonName: "Cancel"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "Launch UI (SYSOP-GW)": runShortcut("OC➥LNK SYSOP-GW"); break;
+    case "Launch Patchbay UI":   runShortcut("OC➥LNK PATCHBAY-SW"); break;
+    case "Launch WiFi UI":       runShortcut("OC➥L CCLF-NET".replace(" L ", "LNK ")); break; // avoids unicode paste glitches
+    case "⬅ Back to Main Menu":  mainMenu(); break;
+  }
+}
+
+function submenuServers() {
+  const choice = app.chooseFromList(
+    ["Launch SSH (MUTINY-SRV)", "Launch SSH (VM)", "View Status (MUTINY-SRV)", "⬅ Back to Main Menu"],
+    {withTitle: "Servers"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "Launch SSH (MUTINY-SRV)": runShortcut("OC➥SSH MUTINY-SRV"); break;
+    case "Launch SSH (VM)":         runShortcut("OC➥SSH MUTINY-VM"); break;
+    case "View Status (MUTINY-SRV)":runShortcut("OC➥STS MUTINY-SRV"); break;
+    case "⬅ Back to Main Menu":     mainMenu(); break;
+  }
+}
+
+function submenuNAS() {
+  const choice = app.chooseFromList(
+    ["Launch SSH", "Launch UI", "View Status", "⬅ Back to Main Menu"],
+    {withTitle: "NAS"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "Launch SSH":  runShortcut("OC➥SSH DATAVAULT-NAS2"); break;
+    case "Launch UI":   runShortcut("OC➥LNK DATAVAULT-NAS"); break;
+    case "View Status": runShortcut("OC➥STS DATAVAULT-NAS"); break;
+    case "⬅ Back to Main Menu": mainMenu(); break;
+  }
+}
+
+function submenuTorrents() {
+  const choice = app.chooseFromList(
+    ["Transfer Torrents", "Launch Seedbox UI", "Launch IPTorrents", "View Downloads", "⬅ Back to Main Menu"],
+    {withTitle: "Torrents"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "Transfer Torrents": runShortcut("OC➥SSH TRANSFER-TOR"); break;
+    case "Launch Seedbox UI": runShortcut("OC➥LNK SEED-SR71"); break;
+    case "Launch IPTorrents": runShortcut("OC➥LNK IPTORRENTS"); break;
+    case "View Downloads":    runShortcut("OC➥STS SR71-VIEW"); break;
+    case "⬅ Back to Main Menu": mainMenu(); break;
+  }
+}
+
+function submenuControlCenter() {
+  const choice = app.chooseFromList(
+    ["OmniCore Dashboard", "About / Help", "⬅ Back to Main Menu"],
+    {withTitle: "Control Center"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "OmniCore Dashboard":
+      openInChromeProfile(CFG.dashboard_url, "Default");
+      break;
+    case "About / Help":
+      app.displayAlert("About / Help", {
+        message: "Use the menu to launch subsystems. Back returns here. Names must match Shortcuts exactly.\n\nRouters, Servers, NAS, Torrents, Keys, Control Center, Utilities."
+      });
+      mainMenu(); break;
+    case "⬅ Back to Main Menu": mainMenu(); break;
+  }
+}
+
+function submenuUtilities() {
+  const choice = app.chooseFromList(
+    ["Status Snapshot", "Run Speedtest (log)", "Verify Shortcut Targets", "Wake NAS via WOL", "Update from GitHub", "⬅ Back to Main Menu"],
+    {withTitle: "Utilities", okButtonName: "Run", cancelButtonName: "Cancel"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "Status Snapshot":
+      app.displayAlert("Home Status", {message: statusSummary()});
+      submenuUtilities();
+      break;
+    case "Run Speedtest (log)":
+      runSpeedtestAndLog();
+      submenuUtilities();
+      break;
+    case "Verify Shortcut Targets":
+      verifyTargets([
+        "OC➥LNK SYSOP-GW","OC➥LNK PATCHBAY-SW","OC➥LNK CCLF-NET",
+        "OC➥SSH MUTINY-SRV","OC➥SSH MUTINY-VM","OC➥STS MUTINY-SRV",
+        "OC➥SSH DATAVAULT-NAS2","OC➥LNK DATAVAULT-NAS","OC➥STS DATAVAULT-NAS",
+        "OC➥SSH TRANSFER-TOR","OC➥LNK SEED-SR71","OC➥LNK IPTORRENTS",
+        "OC➥STS SR71-VIEW","OC➥MNU•KEYS","OC➥LNK OMNICORE=DSH"
+      ]);
+      submenuUtilities();
+      break;
+    case "Wake NAS via WOL":
+      wol(CFG.nas_mac);
+      app.displayNotification("WOL sent to DATAVAULT-NAS", {withTitle: "OC Dashboard"});
+      submenuUtilities();
+      break;
+    case "Update from GitHub":
+      try {
+        sh("cd " + shQuote("~/oc-dashboard") + " && git pull --ff-only");
+        app.displayNotification("Updated to latest from GitHub", {withTitle: "OC Dashboard"});
+      } catch (e) {
+        app.displayAlert("Git update failed", {message: String(e)});
+      }
+      submenuUtilities();
+      break;
+    case "⬅ Back to Main Menu":
+      mainMenu();
+      break;
+  }
+}
+
+// ---------- Main ----------
+function mainMenu() {
+  const choice = app.chooseFromList(
+    ["🛜 Routers & Network", "💻 Servers", "📦 NAS", "⬇️ Torrents", "🔑 Keys", "🛠️ Control Center", "🧰 Utilities", "❌ Exit"],
+    {withTitle: "OC Dashboard Menu", okButtonName: "Open", cancelButtonName: "Cancel"}
+  );
+  if (!choice) return;
+  switch (choice[0]) {
+    case "🛜 Routers & Network": submenuRouters(); break;
+    case "💻 Servers":           submenuServers(); break;
+    case "📦 NAS":               submenuNAS(); break;
+    case "⬇️ Torrents":          submenuTorrents(); break;
+    case "🔑 Keys":              runShortcut("OC➥MNU•KEYS"); break;
+    case "🛠️ Control Center":   submenuControlCenter(); break;
+    case "🧰 Utilities":         submenuUtilities(); break;
+    case "❌ Exit":              return;
+  }
+}
+function run() { mainMenu(); }

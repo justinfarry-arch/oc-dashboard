@@ -1,0 +1,23 @@
+# Create example (safe defaults)
+cat > ~/oc-dashboard/config.example.json <<'JSON'
+{
+  "router_ip": "10.0.0.1",
+  "nas_ip": "10.0.0.6",
+  "server_ip": "10.0.0.4",
+  "server_ssh": "justin@10.0.0.4",
+  "tx_hostport": "10.0.0.4:9091",
+  "nas_mac": "00:90:A9:E8:AA:77",
+  "dashboard_url": "https://dashboard.service.omnicore.local",
+  "master_shortcut": "OC Dashboard Menu",
+
+  "switch_ip": "10.0.0.5",
+  "macs": {
+    "DATAVAULT-NAS": "00:90:A9:E8:AA:77",
+    "SEED-SR71":     "00:11:22:33:44:55",
+    "PATCHBAY-SW":   "66:77:88:99:AA:BB"
+  }
+}
+JSON
+
+# Create your local (editable, git-ignored) — same content is fine to start:
+cp ~/oc-dashboard/config.example.json ~/oc-dashboard/config.local.json
