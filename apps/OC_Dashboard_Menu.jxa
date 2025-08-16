@@ -1,44 +1,94 @@
-// OC Dashboard Menu (JXA) – runs from file with: osascript -l JavaScript ~/oc-dashboard/apps/OC_Dashboard_Menu.jxa
+// OC Dashboard Menu (JXA) – run with: osascript -l JavaScript ~/oc-dashboard/apps/OC_Dashboard_Menu.jxa
 ObjC.import('stdlib');
 const app = Application.currentApplication();
 app.includeStandardAdditions = true;
 
-// ---------- Helpers ----------
-function sh(cmd) {
-  return app.doShellScript(cmd);
-}
+/* ---------- Shell helpers ---------- */
+function sh(cmd) { return app.doShellScript(cmd); }
 function shQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
 
-// Load config (expand $HOME properly; local overrides example)
+/* ---------- Load config (handles ~ expansion) ---------- */
 function loadConfig() {
-  const HOME = sh('printf %s "$HOME"'); // resolve ~ safely
+  const HOME = sh('printf %s "$HOME"');
   const local  = `${HOME}/oc-dashboard/config.local.json`;
   const sample = `${HOME}/oc-dashboard/config.example.json`;
   try {
     const s = sh(`cat ${shQuote(local)}`);
     return JSON.parse(s);
-  } catch (e) {
+  } catch (_) {
     const s = sh(`cat ${shQuote(sample)}`);
     return JSON.parse(s);
   }
 }
 const CFG = loadConfig();
 
+/* ---------- Normalize your grouped JSON to a flat object C ---------- */
+const C = (() => {
+  const S = CFG["IP allowlisting"] || {};
+  const O = CFG.other || {};
+  return {
+    router_ip:       CFG.router_ip       ?? S.router_ip,
+    orbi_mesh_ip:    CFG.orbi_mesh_ip    ?? S.orbi_mesh_ip,
+    server_ip:       CFG.server_ip       ?? S.server_ip,
+    tx_hostport:     CFG.tx_hostport     ?? S.tx_hostport,
+    portainer:       CFG.portainer       ?? S.portainer,
+    switch_ip:       CFG.switch_ip       ?? S.switch_ip,
+    nas_ip:          CFG.nas_ip          ?? S.nas_ip,
+    macs:            CFG.macs            ?? {},
+    server_ssh:      CFG.server_ssh      ?? O.server_ssh,
+    dashboard_url:   CFG.dashboard_url   ?? O.dashboard_url,
+    master_shortcut: CFG.master_shortcut ?? O.master_shortcut ?? "OC Dashboard Menu",
+    chrome_profile:  CFG.chrome_profile  ?? O.chrome_profile  ?? "Default",
+    nas_share_urls:  CFG.nas_share_urls  ?? O.nas_share_urls  ?? []
+  };
+})();
+
+/* ---------- Shortcuts launcher (safe quoting + diagnostics) ---------- */
 function runShortcut(name, input = "") {
   const cmd = "/usr/bin/shortcuts run " + shQuote(name) + (input ? (" --input " + shQuote(input)) : "");
-  try {
-    sh(cmd);
-  } catch (e) {
-    const have = (()=>{ try { return sh("command -v /usr/bin/shortcuts || true"); } catch(_){ return "n/a"; } })();
-    const list = (()=>{ try { return sh("/usr/bin/shortcuts list 2>/dev/null | head -n 200"); } catch(_){ return "n/a"; } })();
-    app.displayAlert("Shortcuts CLI error", {message: `Tried:\n${cmd}\n\n${e}\n\nCLI: ${have}\n\nVisible shortcuts:\n${list}`});
+  try { sh(cmd); }
+  catch (e) {
+    const list = (()=>{ try { return sh("/usr/bin/shortcuts list 2>/dev/null | head -n 100"); } catch(_){ return "n/a"; } })();
+    app.displayAlert("Shortcuts CLI error", {message: `Tried:\n${cmd}\n\n${e}\n\nVisible shortcuts:\n${list}`});
   }
 }
 
-function pingEmoji(host) {
-  try { sh(`/sbin/ping -c1 -W 200 ${host}`); return "✅"; } catch (_) { return "🟥"; }
+/* ---------- Status helpers (ICMP + TCP fallback) ---------- */
+function hostEmoji(ip, ports=[]) {
+  try { sh(`/sbin/ping -c1 -W 1000 ${ip}`); return "✅"; } catch (_) {}
+  for (const p of ports) {
+    try { sh(`/usr/bin/nc -z -G 1 ${ip} ${p}`); return "✅"; } catch (_) {}
+  }
+  return "🟥";
+}
+function statusSummary() {
+  const rtr = hostEmoji(C.router_ip, [80,443,53,8291]);   // MikroTik
+  const nas = hostEmoji(C.nas_ip,    [445,139,80,443]);   // NAS
+  const srv = hostEmoji(C.server_ip, [22,80,443,9091]);   // Server / Transmission
+  const sw  = C.switch_ip ? hostEmoji(C.switch_ip, [80,443]) : "—";
+  return `Router (SYSOP-GW): ${rtr}
+NAS (DATAVAULT-NAS): ${nas}
+Server (MUTINY-SRV): ${srv}
+Switch (PATCHBAY-SW): ${sw}`;
 }
 
+/* ---------- Misc helpers ---------- */
+function openInChromeProfile(url, profile = "Default") {
+  sh(`/usr/bin/open -na "Google Chrome" --args --profile-directory=${shQuote(profile)} ${shQuote(url)}`);
+}
+function haveShortcut(name) {
+  try { sh(`/usr/bin/shortcuts list | sed -e 's/[[:space:]]*$//' | grep -Fx ${shQuote(name)}`); return true; }
+  catch(_) { return false; }
+}
+function verifyTargets(names) {
+  const missing = names.filter(n => !haveShortcut(n));
+  if (missing.length) app.displayAlert("Missing Shortcuts", {message: missing.join("\n")});
+  else app.displayNotification("All targets found ✅", {withTitle: "OC Dashboard"});
+}
+function wol(mac) {
+  try { sh(`/opt/homebrew/bin/wakeonlan ${mac}`); }
+  catch(e) { app.displayAlert("WOL error", {message: String(e)}); }
+}
 function runSpeedtestAndLog() {
   try {
     const out = sh(`/opt/homebrew/bin/speedtest --format=json 2>/dev/null`);
@@ -56,33 +106,7 @@ function runSpeedtestAndLog() {
   }
 }
 
-function haveShortcut(name) {
-  try { sh(`/usr/bin/shortcuts list | sed -e 's/[[:space:]]*$//' | grep -Fx ${shQuote(name)}`); return true; }
-  catch(_) { return false; }
-}
-function verifyTargets(names) {
-  const missing = names.filter(n => !haveShortcut(n));
-  if (missing.length) app.displayAlert("Missing Shortcuts", {message: missing.join("\n")});
-  else app.displayNotification("All targets found ✅", {withTitle: "OC Dashboard"});
-}
-
-function wol(mac) {
-  try { sh(`/opt/homebrew/bin/wakeonlan ${mac}`); }
-  catch(e) { app.displayAlert("WOL error", {message: String(e)}); }
-}
-
-function statusSummary() {
-  const rtr = pingEmoji(CFG.router_ip);  // SYSOP-GW
-  const nas = pingEmoji(CFG.nas_ip);     // DATAVAULT-NAS
-  const srv = pingEmoji(CFG.server_ip);  // MUTINY-SRV
-  return `Router (SYSOP-GW): ${rtr}\nNAS (DATAVAULT-NAS): ${nas}\nServer (MUTINY-SRV): ${srv}`;
-}
-
-function openInChromeProfile(url, profile = "Default") {
-  sh(`/usr/bin/open -na "Google Chrome" --args --profile-directory=${shQuote(profile)} ${shQuote(url)}`);
-}
-
-// ---------- Submenus ----------
+/* ---------- Submenus ---------- */
 function submenuRouters() {
   const choice = app.chooseFromList(
     ["Launch UI (SYSOP-GW)", "Launch Patchbay UI", "Launch WiFi UI", "⬅ Back to Main Menu"],
@@ -92,7 +116,7 @@ function submenuRouters() {
   switch (choice[0]) {
     case "Launch UI (SYSOP-GW)": runShortcut("OC➥LNK SYSOP-GW"); break;
     case "Launch Patchbay UI":   runShortcut("OC➥LNK PATCHBAY-SW"); break;
-    case "Launch WiFi UI":       runShortcut("OC➥L CCLF-NET".replace(" L ", "LNK ")); break; // avoids unicode paste glitches
+    case "Launch WiFi UI":       runShortcut("OC➥LNK CCLF-NET"); break;
     case "⬅ Back to Main Menu":  mainMenu(); break;
   }
 }
@@ -148,32 +172,34 @@ function submenuControlCenter() {
   if (!choice) return;
   switch (choice[0]) {
     case "OmniCore Dashboard":
-      openInChromeProfile(CFG.dashboard_url, "Default");
+      openInChromeProfile(C.dashboard_url, C.chrome_profile);
       break;
     case "About / Help":
       app.displayAlert("About / Help", {
         message: "Use the menu to launch subsystems. Back returns here. Names must match Shortcuts exactly.\n\nRouters, Servers, NAS, Torrents, Keys, Control Center, Utilities."
       });
       mainMenu(); break;
-    case "⬅ Back to Main Menu": mainMenu(); break;
+    case "⬅ Back to Main Menu":
+      mainMenu(); break;
   }
 }
 
 function submenuUtilities() {
   const choice = app.chooseFromList(
-    ["Status Snapshot", "Run Speedtest (log)", "Verify Shortcut Targets", "Wake NAS via WOL", "Update from GitHub", "⬅ Back to Main Menu"],
+    ["Status Snapshot", "Run Speedtest (log)", "Verify Shortcut Targets", "Wake Device via WOL", "Update from GitHub", "⬅ Back to Main Menu"],
     {withTitle: "Utilities", okButtonName: "Run", cancelButtonName: "Cancel"}
   );
   if (!choice) return;
+
   switch (choice[0]) {
     case "Status Snapshot":
       app.displayAlert("Home Status", {message: statusSummary()});
-      submenuUtilities();
-      break;
+      return submenuUtilities();
+
     case "Run Speedtest (log)":
       runSpeedtestAndLog();
-      submenuUtilities();
-      break;
+      return submenuUtilities();
+
     case "Verify Shortcut Targets":
       verifyTargets([
         "OC➥LNK SYSOP-GW","OC➥LNK PATCHBAY-SW","OC➥LNK CCLF-NET",
@@ -182,29 +208,38 @@ function submenuUtilities() {
         "OC➥SSH TRANSFER-TOR","OC➥LNK SEED-SR71","OC➥LNK IPTORRENTS",
         "OC➥STS SR71-VIEW","OC➥MNU•KEYS","OC➥LNK OMNICORE=DSH"
       ]);
-      submenuUtilities();
-      break;
-    case "Wake NAS via WOL":
-      wol(CFG.nas_mac);
-      app.displayNotification("WOL sent to DATAVAULT-NAS", {withTitle: "OC Dashboard"});
-      submenuUtilities();
-      break;
+      return submenuUtilities();
+
+    case "Wake Device via WOL": {
+      const macs = (C.macs && typeof C.macs === 'object') ? C.macs : {};
+      const names = Object.keys(macs);
+      if (!names.length) {
+        app.displayAlert("No MACs configured", {message: "Add entries under `macs` in config.local.json"});
+        return submenuUtilities();
+      }
+      const pick = app.chooseFromList(names, {withTitle: "Wake Device", okButtonName: "Wake", cancelButtonName: "Back"});
+      if (pick && pick[0]) {
+        wol(macs[pick[0]]);
+        app.displayNotification(`WOL sent to ${pick[0]}`, {withTitle: "OC Dashboard"});
+      }
+      return submenuUtilities();
+    }
+
     case "Update from GitHub":
       try {
-        sh("cd " + shQuote("~/oc-dashboard") + " && git pull --ff-only");
-        app.displayNotification("Updated to latest from GitHub", {withTitle: "OC Dashboard"});
+        sh(`cd ${shQuote('~/oc-dashboard')} && git pull --ff-only`);
+        app.displayNotification("Updated from GitHub", {withTitle: "OC Dashboard"});
       } catch (e) {
         app.displayAlert("Git update failed", {message: String(e)});
       }
-      submenuUtilities();
-      break;
+      return submenuUtilities();
+
     case "⬅ Back to Main Menu":
-      mainMenu();
-      break;
+      return mainMenu();
   }
 }
 
-// ---------- Main ----------
+/* ---------- Main ---------- */
 function mainMenu() {
   const choice = app.chooseFromList(
     ["🛜 Routers & Network", "💻 Servers", "📦 NAS", "⬇️ Torrents", "🔑 Keys", "🛠️ Control Center", "🧰 Utilities", "❌ Exit"],
