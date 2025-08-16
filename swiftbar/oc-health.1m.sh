@@ -4,24 +4,33 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 CFG="$HOME/oc-dashboard/config.local.json"
 export CFG
 
-# --------- Read config without jq ----------
+# --------- Read config without jq (via Python) ----------
 read_cfg() {
-/usr/bin/osascript -l JavaScript <<'OSA'
-ObjC.import('stdlib'); ObjC.import('Foundation');
-function slurp(p){ var e=$(); var s=$.NSString.stringWithContentsOfFileEncodingError($(p), $.NSUTF8StringEncoding, e); return s?ObjC.unwrap(s):""; }
-const cfgPath = $.getenv('CFG');
-var o = {}; try { o = JSON.parse(slurp(cfgPath)); } catch(e) {}
-var S = o["IP allowlisting"] || {}, O = o.other || {};
-function pick(){ for (var i=0;i<arguments.length;i++){ var v=arguments[i]; if (v!==undefined && v!==null && v!=="") return v; } return ""; }
-var out = [
-  pick(o.router_ip, S.router_ip),
-  pick(o.nas_ip, S.nas_ip),
-  pick(o.server_ip, S.server_ip),
-  pick(o.server_ssh, O.server_ssh)
-];
-console.log(out.join("\n"));
-OSA
+/usr/bin/python3 - <<'PY'
+import os, json, pathlib, sys
+cfg = os.environ.get("CFG", os.path.expanduser("~/oc-dashboard/config.local.json"))
+p = pathlib.Path(os.path.expanduser(cfg))
+if not p.exists():
+    print("\n".join([""]*4))
+    sys.exit(0)
+o = json.load(open(p))
+S = o.get("IP allowlisting", {})
+O = o.get("other", {})
+def pick(*vals):
+    for v in vals:
+        if v:
+            return v
+    return ""
+vals = [
+    pick(o.get("router_ip"), S.get("router_ip")),
+    pick(o.get("nas_ip"), S.get("nas_ip")),
+    pick(o.get("server_ip"), S.get("server_ip")),
+    pick(o.get("server_ssh"), O.get("server_ssh")),
+]
+print("\n".join(vals))
+PY
 }
+
 IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP MUTINY_SSH < <(read_cfg)
 
 # --------- Host checks with TCP fallback ----------
