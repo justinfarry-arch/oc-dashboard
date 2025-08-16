@@ -1,26 +1,28 @@
 #!/bin/bash
 # OC Health – SwiftBar (refresh every 1m)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+
 CFG="$HOME/oc-dashboard/config.local.json"
 export CFG
 
-# --------- Read config without jq (via Python) ----------
+# --------- Read config (grouped JSON) with Python ----------
 read_cfg() {
-echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} TX:${TX_HOSTPORT_LOCAL} SSH:${MUTINY_SSH}" >&2
 /usr/bin/python3 - <<'PY'
 import os, json, pathlib, sys
 cfg = os.environ.get("CFG", os.path.expanduser("~/oc-dashboard/config.local.json"))
 p = pathlib.Path(os.path.expanduser(cfg))
+def blanks(n): print("\n".join([""]*n))
 if not p.exists():
-    print("\n".join([""]*4))
-    sys.exit(0)
-o = json.load(open(p))
-S = o.get("IP allowlisting", {})
-O = o.get("other", {})
+    blanks(4); sys.exit(0)
+try:
+    o = json.load(open(p))
+except Exception as e:
+    blanks(4); sys.exit(0)
+S = o.get("IP allowlisting", {}) or {}
+O = o.get("other", {}) or {}
 def pick(*vals):
     for v in vals:
-        if v:
-            return v
+        if v not in (None, "", []): return v
     return ""
 vals = [
     pick(o.get("router_ip"), S.get("router_ip")),
@@ -31,8 +33,16 @@ vals = [
 print("\n".join(vals))
 PY
 }
-
 IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP MUTINY_SSH < <(read_cfg)
+
+# --------- Fallback defaults if config failed ----------
+: "${ROUTER_IP:=10.0.0.1}"
+: "${NAS_IP:=10.0.0.6}"
+: "${MUTINY_IP:=10.0.0.4}"
+: "${MUTINY_SSH:=justin@10.0.0.4}"
+
+# Optional debug
+echo "DBG => R:${ROUTER_IP} N:${NAS_IP} S:${MUTINY_IP} SSH:${MUTINY_SSH}" >&2
 
 # --------- Host checks with TCP fallback ----------
 host_ok() {
