@@ -1,10 +1,34 @@
+# Create example (safe defaults)
+cat > ~/oc-dashboard/config.example.json <<'JSON'
 {
+  "IP allowlisting":{
   "router_ip": "10.0.0.1",
-  "nas_ip": "10.0.0.6",
+  "orbi_mesh_ip": "10.0.0.3",
   "server_ip": "10.0.0.4",
+  "tx_hostport": "10.0.0.4:9091",
+  "portainer": "10.0.0.4:9000",
+  "switch_ip": "10.0.0.5",
+  "nas_ip": "10.0.0.6"
+  },
+  "macs":{
+  "SYSOP-GW": "F4:1E:57:71:A5:71",
+  "CCLF-NET": "6C:CD:D6:1F:7A:4F",
+  "MUTINY-SRV": "68:1D:EF:3C:9A:88",
+  "SEED-SR71": "AA:BB:CC:DD:EE:FF",
+  "PATCHBAY-SW": "98:03:8E:34:E7:A1",
+  "DATAVAULT-NAS": "00:90:A9:E8:AA:77"
+  },
+  "other":{
   "server_ssh": "justin@10.0.0.4",
-  "tx_hostport": "127.0.0.1:9091",
-  "nas_mac": "00:90:A9:E8:AA:77",
   "dashboard_url": "https://dashboard.service.omnicore.local",
-  "master_shortcut": "OC Dashboard Menu"
+  "master_shortcut": "OC Dashboard Menu",
+  "chrome_profile": "Default",
+  "nas_share_movies_url": ["smb://DATAVAULT-NAS._smb._tcp.local/Public/Movies/"]
+  "nas_share_tvshows_url": ["smb://DATAVAULT-NAS._smb._tcp.local/Public/TV Shows/"]
+  }
 }
+
+JSON
+
+# Create your local (editable, git-ignored) — same content is fine to start:
+cp ~/oc-dashboard/config.example.json ~/oc-dashboard/config.local.json
