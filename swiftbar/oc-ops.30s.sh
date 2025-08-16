@@ -80,11 +80,3 @@ echo "---"
 echo "⬇️ Update from GitHub | bash=/bin/bash param1=-lc param2='cd ~/oc-dashboard && git pull --ff-only && osascript -e \"display notification \\\"Updated\\\" with title \\\"OC Dashboard\\\"\"' terminal=false refresh=true"
 echo "🔄 Refresh | refresh=true"
 SH
-
-# --- oc-health.1m.sh ---
-cat > ~/oc-dashboard/swiftbar/oc-health.1m.sh <<'SH'
-#!/bin/bash
-# OC Health – SwiftBar (refresh every 1m)
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-
-PYTHON="$(command -v python3)"; [ -x "$PYTHON" ] || PYTHON="/opt/homebrew/bin/python3"; [ -x "$PYTHON" ] || PYTHO
