@@ -4,31 +4,40 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 CFG="$HOME/oc-dashboard/config.local.json"
 export CFG
 
-# --------- Read config without jq (via JXA) ----------
+# --------- Read config without jq (via Python) ----------
 read_cfg() {
-/usr/bin/osascript -l JavaScript <<'OSA'
-ObjC.import('stdlib'); ObjC.import('Foundation');
-function slurp(p){ var e=$(); var s=$.NSString.stringWithContentsOfFileEncodingError($(p), $.NSUTF8StringEncoding, e); return s?ObjC.unwrap(s):""; }
-const cfgPath = $.getenv('CFG');
-var o = {};
-try { o = JSON.parse(slurp(cfgPath)); } catch(e) {}
-var S = o["IP allowlisting"] || {}, O = o.other || {};
-function pick(){ for (var i=0;i<arguments.length;i++){ var v=arguments[i]; if (v!==undefined && v!==null && v!=="") return v; } return ""; }
-var out = [
-  pick(o.router_ip, S.router_ip),
-  pick(o.nas_ip, S.nas_ip),
-  pick(o.server_ip, S.server_ip),
-  pick(o.tx_hostport, S.tx_hostport),
-  pick(o.portainer, S.portainer),
-  pick(o.switch_ip, S.switch_ip),
-  pick(o.server_ssh, O.server_ssh),
-  pick(o.dashboard_url, O.dashboard_url),
-  pick(o.master_shortcut, O.master_shortcut, "OC Dashboard Menu")
-];
-console.log(out.join("\n"));
-OSA
+/usr/bin/python3 - <<'PY'
+import os, json, pathlib, sys
+cfg = os.environ.get("CFG", os.path.expanduser("~/oc-dashboard/config.local.json"))
+p = pathlib.Path(os.path.expanduser(cfg))
+if not p.exists():
+    print("\n".join([""]*9))
+    sys.exit(0)
+o = json.load(open(p))
+S = o.get("IP allowlisting", {})
+O = o.get("other", {})
+def pick(*vals):
+    for v in vals:
+        if v:
+            return v
+    return ""
+vals = [
+    pick(o.get("router_ip"), S.get("router_ip")),
+    pick(o.get("nas_ip"), S.get("nas_ip")),
+    pick(o.get("server_ip"), S.get("server_ip")),
+    pick(o.get("tx_hostport"), S.get("tx_hostport")),
+    pick(o.get("portainer"), S.get("portainer")),
+    pick(o.get("switch_ip"), S.get("switch_ip")),
+    pick(o.get("server_ssh"), O.get("server_ssh")),
+    pick(o.get("dashboard_url"), O.get("dashboard_url")),
+    pick(o.get("master_shortcut"), O.get("master_shortcut"), "OC Dashboard Menu")
+]
+print("\n".join(vals))
+PY
 }
+
 IFS=$'\n' read -r ROUTER_IP NAS_IP MUTINY_IP TX_HOSTPORT_LOCAL PORTAINER_IP SWITCH_IP MUTINY_SSH DASH_URL SHORTCUT_MENU < <(read_cfg)
+
 
 # --------- Host checks: ICMP first, then TCP fallback ----------
 host_emoji() {
