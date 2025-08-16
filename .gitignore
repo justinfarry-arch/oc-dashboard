@@ -1,0 +1,4 @@
+.DS_Store
+*.app
+OC_Dashboard_speedtest.csv
+config.local.json
