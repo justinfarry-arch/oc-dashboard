@@ -2,6 +2,7 @@
 # OC Ops – SwiftBar (refresh every 30s)
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 CFG="$HOME/oc-dashboard/config.local.json"
+export CFG
 
 # --------- Read config without jq (via JXA) ----------
 read_cfg() {
